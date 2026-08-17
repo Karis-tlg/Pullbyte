@@ -2,9 +2,9 @@ import type { Metadata, Viewport } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Pullbyte — local-first media downloader',
+  title: 'Pullbyte',
   description:
-    'A lightweight web interface for downloading video, audio and images through a local or remote yt-dlp + ffmpeg engine.',
+    'Download video, audio and images with a local Pullbyte Helper running on your computer.',
 }
 
 export const viewport: Viewport = {
