@@ -8,10 +8,9 @@ live on GitHub Pages, while download engines remain replaceable. The repository
 also contains the existing FastAPI + yt-dlp + ffmpeg engine, which is useful for
 local development today and can become the remote/VPS engine later.
 
-> **Project status:** the GitHub Pages build runs in an explicit preview mode.
-> It simulates probe/download progress so the full UX can be developed and
-> reviewed without pretending that a browser-only yt-dlp engine exists. Real
-> downloads use the FastAPI engine for now. A localhost helper is a later
+> **Project status:** GitHub Pages hosts the static interface only. It does not
+> fabricate downloads: without a configured API the UI stays offline. Real
+> downloads use the FastAPI engine for now; a localhost helper is a later
 > milestone.
 
 ## Why Pullbyte
@@ -20,7 +19,7 @@ local development today and can become the remote/VPS engine later.
   server and no media bandwidth on the host.
 - **Engine boundary.** UI code talks to a small downloader contract instead of
   hard-coding FastAPI requests throughout the page.
-- **Honest preview mode.** The public static build says when work is simulated.
+- **No fake completion states.** The UI only enables downloads when a real engine is connected.
 - **Existing pipeline preserved.** yt-dlp/ffmpeg format selection, audio
   conversion, image downloads, and the iPhone Shortcut endpoint remain usable.
 - **Small dependency surface.** React, Next.js, Tailwind, and Phosphor icons on
@@ -36,11 +35,12 @@ GitHub Pages / static export
           |
           v
    DownloaderEngine
-      /        \
- DemoEngine   ApiEngine
-                |
-                v
-         FastAPI / VPS
+          |
+          v
+       ApiEngine
+          |
+          v
+    FastAPI / VPS
                 |
           yt-dlp + ffmpeg
 ```
@@ -59,7 +59,7 @@ validate the web product without inventing a second backend before it is needed.
 │   └── check.py                 # integration/regression checks
 ├── web/
 │   ├── app/                     # Next.js UI
-│   └── lib/downloader.ts        # engine contract + API/demo engines
+│   └── lib/downloader.ts        # engine contract + API engine
 ├── Dockerfile
 ├── CONTRIBUTING.md
 ├── SECURITY.md
@@ -90,33 +90,31 @@ npm run typecheck
 npm run build
 ```
 
-### Static preview
+### Static Pages build
 
-The Pages build uses the demo engine:
+Build the web app for GitHub Pages with:
 
 ```bash
-BUILD_TARGET=pages NEXT_PUBLIC_ENGINE=demo npm run build
+BUILD_TARGET=pages npm run build
 ```
 
-Output is written to `web/out/`.
+Output is written to `web/out/`. A Pages build never simulates downloads. If no
+real API is configured, the interface reports the engine as offline and disables
+download actions instead of creating fake completed jobs.
 
-The demo engine validates the link shape, returns representative media formats,
-and drives the real queue/progress UI. It never downloads media and never
-creates a fake file.
+### Connect a remote API
 
-### Connect a remote API later
-
-The same frontend can be built against a real API engine:
+Point the static frontend at a real Pullbyte API:
 
 ```bash
 BUILD_TARGET=pages \
-NEXT_PUBLIC_ENGINE=api \
 NEXT_PUBLIC_API_BASE_URL=https://downloads.example.com \
 npm run build
 ```
 
-The FastAPI server must then allow the exact GitHub Pages/custom-domain origin
-through `ALLOWED_ORIGIN`.
+For GitHub Pages, set the repository variable `NEXT_PUBLIC_API_BASE_URL` to the
+HTTPS API origin. The FastAPI server must allow the exact GitHub Pages/custom-
+domain origin through `ALLOWED_ORIGIN`.
 
 ## GitHub Pages
 
@@ -124,7 +122,7 @@ through `ALLOWED_ORIGIN`.
 
 1. install dependencies with `npm ci`;
 2. run TypeScript type checking;
-3. build the static export with the demo engine;
+3. build the static export;
 4. deploy `web/out` on non-PR runs.
 
 The Next.js config derives the project-site base path from
@@ -238,7 +236,6 @@ Open `http://localhost:8000`.
 | `MAX_FILESIZE` | 8 GiB | yt-dlp per-download cap |
 | `API_TOKEN` | empty | shared secret for `/api/grab` |
 | `GRAB_TIMEOUT` | `600` | `/api/grab` timeout in seconds |
-| `NEXT_PUBLIC_ENGINE` | `api` unless set | frontend engine: `api` or `demo` |
 | `NEXT_PUBLIC_API_BASE_URL` | empty | cross-origin API base URL |
 | `BUILD_TARGET` | `dev` | `dev`, `pages`, or `api` |
 
@@ -252,7 +249,7 @@ directories.
 - Active jobs do not survive an engine restart.
 - The FastAPI job API has no user accounts or multi-tenancy.
 - Running jobs cannot yet be cancelled through the current backend.
-- The static Pages preview does not download real media.
+- Static Pages requires a configured remote API to download real media.
 - A localhost helper is planned, not implemented.
 
 ## Contributing

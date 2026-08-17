@@ -5,7 +5,7 @@ COPY web/package.json web/package-lock.json* ./
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 COPY web/ ./
 # Build the API-served static frontend with the real API engine.
-RUN BUILD_TARGET=api NEXT_PUBLIC_ENGINE=api npm run build
+RUN BUILD_TARGET=api npm run build
 
 # Stage 2: runtime. Python + ffmpeg only, no Node.
 FROM python:3.13-slim

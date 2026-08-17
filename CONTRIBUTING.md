@@ -11,11 +11,14 @@ npm ci
 npm run dev
 ```
 
-The web app talks to the FastAPI backend by default. For a static preview:
+The web app talks to the FastAPI backend by default. To verify the static Pages build:
 
 ```bash
-BUILD_TARGET=pages NEXT_PUBLIC_ENGINE=demo npm run build
+BUILD_TARGET=pages npm run build
 ```
+
+The static build intentionally has no bundled download engine. Configure
+`NEXT_PUBLIC_API_BASE_URL` when testing against a real remote engine.
 
 Before opening a pull request, run:
 

@@ -6,9 +6,7 @@ import {
   CheckCircleIcon,
   CheckIcon,
   ClipboardIcon,
-  CpuIcon,
   FilmSlateIcon,
-  HardDriveIcon,
   ImageIcon,
   LinkIcon,
   MusicNotesIcon,
@@ -92,39 +90,6 @@ function BrandMark({ size = 38 }: { size?: number }) {
   )
 }
 
-function EngineCard({ health }: { health: EngineHealth | null }) {
-  const ready = health?.ready ?? false
-  return (
-    <aside className="rounded-card border border-ink-line bg-ink-soft p-5" aria-label="Download engine">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="eyebrow">Engine</p>
-          <h2 className="mt-2 text-lg font-semibold text-cream">{health?.name ?? 'Checking engine…'}</h2>
-        </div>
-        <span
-          className={`mt-1 inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
-            ready ? 'border-acid/40 bg-acid/10 text-acid' : 'border-danger/35 bg-danger/10 text-danger'
-          }`}
-        >
-          <span className={`size-1.5 rounded-full ${ready ? 'bg-acid' : 'bg-danger'}`} aria-hidden="true" />
-          {health ? (ready ? 'Ready' : 'Offline') : 'Checking'}
-        </span>
-      </div>
-      <p className="mt-3 text-sm leading-6 text-muted">
-        {health?.detail ?? 'Looking for the configured download engine.'}
-      </p>
-      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-ink-line/70 pt-4 text-xs text-muted">
-        <span className="inline-flex items-center gap-2">
-          <HardDriveIcon size={15} aria-hidden="true" /> Static web
-        </span>
-        <span className="inline-flex items-center gap-2">
-          <CpuIcon size={15} aria-hidden="true" /> {engine.kind === 'demo' ? 'Simulated' : 'Engine compute'}
-        </span>
-      </div>
-    </aside>
-  )
-}
-
 function DownloadList({
   jobs,
   confirmId,
@@ -204,7 +169,7 @@ function DownloadList({
                     <CheckCircleIcon size={15} weight="bold" aria-hidden="true" /> Save file
                   </a>
                 ) : job.status === 'done' ? (
-                  <span className="mr-auto text-xs text-muted">Preview complete — no file was created.</span>
+                  <span className="mr-auto text-xs text-danger">File unavailable from the connected engine.</span>
                 ) : null}
                 {confirmId === job.id ? (
                   <>
@@ -264,7 +229,26 @@ export default function Page() {
   }, [])
 
   useEffect(() => {
-    engine.health().then(setHealth)
+    let handle: ReturnType<typeof setTimeout>
+    let stopped = false
+    const check = async () => {
+      const status = await engine.health()
+      if (stopped) return
+      setHealth(status)
+      handle = setTimeout(check, 5000)
+    }
+    check()
+    return () => {
+      stopped = true
+      clearTimeout(handle)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!health?.ready) {
+      setJobs([])
+      return
+    }
     let handle: ReturnType<typeof setTimeout>
     let stopped = false
     const tick = async () => {
@@ -276,7 +260,7 @@ export default function Page() {
       stopped = true
       clearTimeout(handle)
     }
-  }, [refresh])
+  }, [health?.ready, refresh])
 
   function fail(message: string) {
     setError(message)
@@ -337,7 +321,7 @@ export default function Page() {
       })
       setProbe(null)
       setUrl('')
-      setAnnounce(engine.kind === 'demo' ? 'Preview download started.' : 'Download queued.')
+      setAnnounce('Download queued.')
       urlRef.current?.focus()
       refresh()
     } catch (caught) {
@@ -374,26 +358,20 @@ export default function Page() {
           </div>
         </div>
         <span className="rounded-full border border-ink-line bg-ink-soft px-3 py-1.5 text-xs font-medium text-muted">
-          {engine.kind === 'demo'
-            ? 'Web preview'
-            : health?.ready
-              ? 'Engine connected'
-              : health
-                ? 'Engine offline'
-                : 'Checking engine'}
+          {health?.ready ? 'Engine connected' : health ? 'Engine offline' : 'Checking engine'}
         </span>
       </header>
 
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl px-5 pb-16 outline-none sm:px-8 sm:pb-24">
-        <section className="grid gap-8 pt-8 lg:grid-cols-[minmax(0,1.45fr)_minmax(310px,0.75fr)] lg:gap-10 lg:pt-16">
-          <div>
+        <section className="pt-8 lg:pt-16">
+          <div className="mx-auto max-w-4xl">
             <div className="max-w-3xl">
-              <p className="eyebrow">Static web. Pluggable engine.</p>
+              <p className="eyebrow">Local-first media downloader</p>
               <h1 className="mt-4 max-w-[12ch] text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-cream sm:text-6xl lg:text-7xl">
                 Links in. Files out.
               </h1>
               <p className="mt-5 max-w-[58ch] text-base leading-7 text-muted sm:text-lg">
-                Pullbyte is the lightweight interface for video, audio and image downloads. Keep the web static; connect the engine you trust to do the heavy work.
+                Pullbyte is the lightweight interface for video, audio and image downloads. Connect a real download engine, inspect a link, then save the finished file.
               </p>
             </div>
 
@@ -403,9 +381,17 @@ export default function Page() {
                   <p className="eyebrow">New download</p>
                   <h2 id="composer-heading" className="mt-1 text-xl font-semibold text-cream">Inspect a link</h2>
                 </div>
-                {engine.kind === 'demo' ? (
-                  <span className="rounded-full border border-acid/30 bg-acid/8 px-3 py-1 text-xs font-semibold text-acid">Simulation</span>
-                ) : null}
+                <span
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                    health?.ready
+                      ? 'border-acid/35 bg-acid/8 text-acid'
+                      : health
+                        ? 'border-danger/35 bg-danger/8 text-danger'
+                        : 'border-ink-line bg-ink text-muted'
+                  }`}
+                >
+                  {health?.ready ? 'Ready' : health ? 'Offline' : 'Checking'}
+                </span>
               </div>
 
               <form onSubmit={inspectLink} noValidate className="mt-5">
@@ -440,6 +426,13 @@ export default function Page() {
                   Single items only. Playlists stay out of scope until the core flow is solid.
                 </p>
               </form>
+
+              {health && !health.ready ? (
+                <p role="status" className="mt-4 flex items-start gap-2 rounded-[12px] border border-danger/30 bg-danger/7 p-3 text-sm leading-6 text-muted">
+                  <WarningCircleIcon size={18} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
+                  <span><strong className="font-semibold text-cream">Download engine is not connected.</strong> {health.detail}</span>
+                </p>
+              ) : null}
 
               {error ? (
                 <p id="url-error" role="alert" className="mt-4 flex items-start gap-2 rounded-[12px] border border-danger/35 bg-danger/8 p-3 text-sm text-danger">
@@ -570,16 +563,13 @@ export default function Page() {
 
                   <button type="button" onClick={startDownload} disabled={!canDownload} className="button-primary mt-6 w-full py-3.5">
                     <ArrowDownIcon size={18} weight="bold" aria-hidden="true" />
-                    {engine.kind === 'demo' ? 'Run preview download' : 'Start download'}
+                    Start download
                   </button>
                 </div>
               ) : null}
             </section>
-          </div>
 
-          <div className="space-y-5 lg:pt-1">
-            <EngineCard health={health} />
-            <section className="rounded-card border border-ink-line bg-ink-soft p-5" aria-labelledby="downloads-heading">
+            <section className="mt-5 rounded-card border border-ink-line bg-ink-soft p-5 sm:p-6" aria-labelledby="downloads-heading">
               <div className="mb-4 flex items-center justify-between gap-4">
                 <div>
                   <p className="eyebrow">Activity</p>
@@ -590,20 +580,6 @@ export default function Page() {
               <DownloadList jobs={jobs} confirmId={confirmId} onConfirm={setConfirmId} onDelete={deleteJob} />
             </section>
           </div>
-        </section>
-
-        <section className="mt-10 grid gap-px overflow-hidden rounded-card border border-ink-line bg-ink-line sm:grid-cols-3" aria-label="Project principles">
-          {[
-            ['01', 'Static by default', 'GitHub Pages can host the entire web interface with no app server.'],
-            ['02', 'Engine is replaceable', 'Use the existing API today; local helper and VPS can slot in later.'],
-            ['03', 'No fake cloud story', 'The UI tells you when it is simulating and when a real engine is connected.'],
-          ].map(([number, title, copy]) => (
-            <div key={number} className="bg-ink-soft p-5 sm:p-6">
-              <span className="font-mono text-xs text-acid">{number}</span>
-              <h2 className="mt-5 font-semibold text-cream">{title}</h2>
-              <p className="mt-2 text-sm leading-6 text-muted">{copy}</p>
-            </div>
-          ))}
         </section>
       </main>
 
