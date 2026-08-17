@@ -1,0 +1,16 @@
+# Patterns here are root-anchored, unlike .gitignore: a bare "node_modules"
+# would only match one at the context root, not web/node_modules. Without the
+# **/ prefix the host's Windows-built modules get copied over the clean
+# `npm ci` tree in the builder stage.
+**/node_modules
+**/.next
+api/web
+**/__pycache__
+*.pyc
+.git
+.gitignore
+dl
+*.png
+*.shortcut
+.claude
+README.md
