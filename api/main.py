@@ -5,6 +5,7 @@ Dict item assignment is atomic under the GIL, so no lock or queue is needed.
 """
 from __future__ import annotations
 
+import inspect
 import ipaddress
 import json
 import mimetypes
@@ -35,10 +36,21 @@ FFMPEG = shutil.which("ffmpeg")
 if not FFMPEG:
     raise SystemExit("ffmpeg not found on PATH. Install ffmpeg, then restart.")
 
+HELPER_MODE = os.environ.get("PULLBYTE_HELPER") == "1"
+OFFICIAL_WEB_ORIGIN = "https://karis-tlg.github.io"
+
 # Short root keeps us clear of the Windows 260-char path limit once a job id and
-# a long remote title are appended.
-ROOT = Path(os.environ.get("DOWNLOAD_DIR") or (r"C:\dl" if os.name == "nt" else "/data"))
-ORIGIN = os.environ.get("ALLOWED_ORIGIN", "http://localhost:3000")
+# a long remote title are appended. The local helper owns a folder under the
+# user's Downloads directory; server mode keeps the original compact root.
+default_root = Path.home() / "Downloads" / "Pullbyte" if HELPER_MODE else Path(r"C:\dl" if os.name == "nt" else "/data")
+ROOT = Path(os.environ.get("DOWNLOAD_DIR") or default_root)
+raw_origins = os.environ.get("ALLOWED_ORIGINS") or os.environ.get("ALLOWED_ORIGIN")
+if raw_origins:
+    ALLOWED_ORIGINS = [origin.strip().rstrip("/") for origin in raw_origins.split(",") if origin.strip()]
+elif HELPER_MODE:
+    ALLOWED_ORIGINS = [OFFICIAL_WEB_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"]
+else:
+    ALLOWED_ORIGINS = ["http://localhost:3000"]
 MAX_FILESIZE = int(os.environ.get("MAX_FILESIZE", 8 * 1024**3))
 MAX_IMAGE = 64 * 1024**2
 MIN_FREE_DISK = 2 * 1024**3
@@ -47,7 +59,7 @@ CSRF_HEADER = "pullbyte"
 # port is reachable from a phone, since that endpoint takes no CSRF header.
 API_TOKEN = os.environ.get("API_TOKEN", "").strip()
 GRAB_TIMEOUT = int(os.environ.get("GRAB_TIMEOUT", 600))
-if not API_TOKEN:
+if not API_TOKEN and not HELPER_MODE:
     # Not fatal: a loopback-only dev run is fine without one. But this service
     # has no other authentication, so anyone who can reach the port can spend
     # your bandwidth and disk once it is published to a LAN or public address.
@@ -464,23 +476,34 @@ def _sweep() -> None:
 app = FastAPI(title="Pullbyte")
 _sweep()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[ORIGIN],  # exact origin, never "*": this service has no auth
-    allow_methods=["GET", "POST", "DELETE"],
-    allow_headers=["Content-Type", "X-Requested-By"],
-)
+cors_options: dict[str, Any] = {
+    "allow_origins": ALLOWED_ORIGINS,  # exact origins only; never "*" for a local helper
+    "allow_methods": ["GET", "POST", "DELETE"],
+    "allow_headers": ["Content-Type", "X-Requested-By"],
+}
+if "allow_private_network" in inspect.signature(CORSMiddleware.__init__).parameters:
+    cors_options["allow_private_network"] = HELPER_MODE
+app.add_middleware(CORSMiddleware, **cors_options)
 
 
 @app.middleware("http")
-async def _csrf(request, call_next):
-    """No-auth localhost services are drive-able by any page the user visits.
-    Requiring a non-simple header forces a preflight that CORS then blocks.
+async def _browser_guard(request, call_next):
+    """Protect a loopback helper from drive-by web pages.
+
+    CORS controls which origins may read responses; this explicit Origin check
+    also rejects state-free GETs from other browser origins. The custom header
+    keeps mutating requests non-simple so browsers preflight them.
     """
+    origin = request.headers.get("origin")
+    if HELPER_MODE and origin and origin.rstrip("/") not in ALLOWED_ORIGINS:
+        return JSONResponse({"detail": "Origin is not allowed by Pullbyte Helper."}, status_code=403)
     if request.method not in ("GET", "HEAD", "OPTIONS"):
         if request.headers.get("x-requested-by") != CSRF_HEADER:
             return JSONResponse({"detail": "Missing X-Requested-By header."}, status_code=403)
-    return await call_next(request)
+    response = await call_next(request)
+    if HELPER_MODE and request.headers.get("access-control-request-private-network") == "true":
+        response.headers.setdefault("Access-Control-Allow-Private-Network", "true")
+    return response
 
 
 class ProbeIn(BaseModel):
@@ -509,7 +532,8 @@ def health() -> dict[str, Any]:
 
     free = shutil.disk_usage(ROOT).free
     return {
-        "ok": True, "ffmpeg": FFMPEG, "yt_dlp": yt_dlp.version.__version__,
+        "ok": True, "engine": "local-helper" if HELPER_MODE else "api",
+        "ffmpeg": FFMPEG, "yt_dlp": yt_dlp.version.__version__,
         "download_dir": str(ROOT), "free_disk": free, "jobs": len(JOBS),
         "audio_codecs": list(AUDIO_CODECS), "lossless": sorted(LOSSLESS),
     }

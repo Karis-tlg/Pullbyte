@@ -8,15 +8,16 @@ live on GitHub Pages, while download engines remain replaceable. The repository
 also contains the existing FastAPI + yt-dlp + ffmpeg engine, which is useful for
 local development today and can become the remote/VPS engine later.
 
-> **Project status:** GitHub Pages hosts the static interface only. It does not
-> fabricate downloads: without a configured API the UI stays offline. Real
-> downloads use the FastAPI engine for now; a localhost helper is a later
-> milestone.
+> **Project status:** GitHub Pages hosts only the static interface. Real downloads
+> run through Pullbyte Helper on the user's own computer. No VPS is required for
+> the local flow; an optional remote API remains supported as a fallback.
 
 ## Why Pullbyte
 
 - **Static web first.** The frontend can be hosted on GitHub Pages with no Node
   server and no media bandwidth on the host.
+- **Local compute.** The web UI automatically looks for Pullbyte Helper on
+  `http://localhost:8765`; yt-dlp and ffmpeg run on the user's computer.
 - **Engine boundary.** UI code talks to a small downloader contract instead of
   hard-coding FastAPI requests throughout the page.
 - **No fake completion states.** The UI only enables downloads when a real engine is connected.
@@ -33,21 +34,17 @@ GitHub Pages / static export
           v
       Pullbyte Web
           |
-          v
-   DownloaderEngine
+          +--> http://localhost:8765
+          |       Pullbyte Helper
+          |       yt-dlp + ffmpeg
+          |       user CPU / disk / network
           |
-          v
-       ApiEngine
-          |
-          v
-    FastAPI / VPS
-                |
-          yt-dlp + ffmpeg
+          `--> optional remote API / VPS
 ```
 
-The future localhost helper should implement the same web-facing behavior. It
-is deliberately not scaffolded yet; the current contract is enough to build and
-validate the web product without inventing a second backend before it is needed.
+The web always tries the loopback helper first. A remote API is only a fallback
+when `NEXT_PUBLIC_API_BASE_URL` is configured. The helper binds to loopback only
+and accepts the official Pages origin plus local development origins by default.
 
 ## Repository layout
 
@@ -55,8 +52,12 @@ validate the web product without inventing a second backend before it is needed.
 .
 ├── .github/workflows/pages.yml  # web CI + GitHub Pages deploy
 ├── api/
-│   ├── main.py                  # FastAPI downloader engine
+│   ├── main.py                  # shared FastAPI downloader engine
 │   └── check.py                 # integration/regression checks
+├── helper/
+│   ├── run.py                   # loopback-only local helper entrypoint
+│   ├── install-windows.ps1      # Windows installer + pullbyte:// launcher
+│   └── start-unix.sh            # macOS/Linux helper launcher
 ├── web/
 │   ├── app/                     # Next.js UI
 │   └── lib/downloader.ts        # engine contract + API engine
@@ -98,9 +99,49 @@ Build the web app for GitHub Pages with:
 BUILD_TARGET=pages npm run build
 ```
 
-Output is written to `web/out/`. A Pages build never simulates downloads. If no
-real API is configured, the interface reports the engine as offline and disables
-download actions instead of creating fake completed jobs.
+Output is written to `web/out/`. No API URL is required for the normal local
+flow: the browser automatically probes `http://localhost:8765` and
+`http://127.0.0.1:8765`. If the helper is not running, the UI stays offline
+instead of creating fake completed jobs.
+
+## Local helper
+
+The hosted web UI cannot execute native yt-dlp or ffmpeg by itself. Pullbyte
+therefore uses a small loopback helper that runs on the user's own machine. The
+helper listens only on `127.0.0.1:8765`; GitHub Pages automatically detects it.
+
+### Windows
+
+Download `helper/install-windows.ps1` from this repository and run it with
+PowerShell. The installer:
+
+1. installs Python 3.13 and ffmpeg through winget when they are missing;
+2. installs Pullbyte under `%LOCALAPPDATA%\Pullbyte`;
+3. creates an isolated Python environment and installs `requirements.txt`;
+4. registers `pullbyte://start` for the **Start helper** button on the website;
+5. starts the helper.
+
+The helper stores completed jobs under `%USERPROFILE%\Downloads\Pullbyte` by
+default. Keep the helper window open while downloading. Re-running the installer
+updates the local source from `main`.
+
+### macOS / Linux
+
+With Python 3 and ffmpeg installed:
+
+```bash
+./helper/start-unix.sh
+```
+
+This creates `.helper-venv`, installs the pinned Python dependencies, and starts
+the helper on loopback. Downloads default to `~/Downloads/Pullbyte`.
+
+### Browser permission
+
+Modern browsers may ask whether the Pullbyte Pages origin can access devices or
+services on the local network. Allow that permission for Pullbyte so the page can
+reach the loopback helper. The helper also validates the browser `Origin` and
+keeps the existing `X-Requested-By` CSRF guard.
 
 ### Connect a remote API
 
@@ -231,12 +272,16 @@ Open `http://localhost:8000`.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `DOWNLOAD_DIR` | `C:\dl` on Windows, `/data` elsewhere | app-owned download root |
-| `ALLOWED_ORIGIN` | `http://localhost:3000` | exact browser origin allowed by CORS |
+| `DOWNLOAD_DIR` | helper: `~/Downloads/Pullbyte`; server: `C:\dl` or `/data` | app-owned download root |
+| `ALLOWED_ORIGINS` | helper: official Pages + localhost dev origins | comma-separated exact browser origins |
+| `ALLOWED_ORIGIN` | `http://localhost:3000` | legacy single-origin server setting |
+| `PULLBYTE_HELPER` | empty | `1` enables loopback-helper defaults |
+| `PULLBYTE_HELPER_PORT` | `8765` | helper listen port |
 | `MAX_FILESIZE` | 8 GiB | yt-dlp per-download cap |
 | `API_TOKEN` | empty | shared secret for `/api/grab` |
 | `GRAB_TIMEOUT` | `600` | `/api/grab` timeout in seconds |
-| `NEXT_PUBLIC_API_BASE_URL` | empty | cross-origin API base URL |
+| `NEXT_PUBLIC_LOCAL_HELPER_PORT` | `8765` | local helper port baked into the web build |
+| `NEXT_PUBLIC_API_BASE_URL` | empty | optional remote API fallback |
 | `BUILD_TARGET` | `dev` | `dev`, `pages`, or `api` |
 
 `DOWNLOAD_DIR` is a **Pullbyte-owned database root**, not a general shared
@@ -249,8 +294,8 @@ directories.
 - Active jobs do not survive an engine restart.
 - The FastAPI job API has no user accounts or multi-tenancy.
 - Running jobs cannot yet be cancelled through the current backend.
-- Static Pages requires a configured remote API to download real media.
-- A localhost helper is planned, not implemented.
+- Static Pages requires the local helper or an optional configured remote API.
+- The browser cannot start native yt-dlp/ffmpeg until the helper has been installed once.
 
 ## Contributing
 

@@ -11,14 +11,23 @@ npm ci
 npm run dev
 ```
 
-The web app talks to the FastAPI backend by default. To verify the static Pages build:
+The web app probes Pullbyte Helper on `localhost:8765` first. Start the helper
+from another terminal when working on the full local flow:
+
+```bash
+./helper/start-unix.sh
+```
+
+To verify the static Pages build:
 
 ```bash
 BUILD_TARGET=pages npm run build
 ```
 
-The static build intentionally has no bundled download engine. Configure
-`NEXT_PUBLIC_API_BASE_URL` when testing against a real remote engine.
+The static build contains no native downloader; yt-dlp and ffmpeg run in the
+loopback helper. `NEXT_PUBLIC_API_BASE_URL` is optional and only configures a
+remote fallback. Use `NEXT_PUBLIC_LOCAL_HELPER_PORT` to point a test build at a
+non-default helper port.
 
 Before opening a pull request, run:
 

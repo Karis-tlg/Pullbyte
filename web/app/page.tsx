@@ -17,6 +17,7 @@ import {
 } from '@phosphor-icons/react'
 import {
   engine,
+  helper,
   type Codec,
   type EngineHealth,
   type Job,
@@ -95,11 +96,13 @@ function DownloadList({
   confirmId,
   onConfirm,
   onDelete,
+  local,
 }: {
   jobs: Job[]
   confirmId: string | null
   onConfirm: (id: string | null) => void
   onDelete: (id: string) => void
+  local: boolean
 }) {
   if (jobs.length === 0) {
     return (
@@ -165,9 +168,12 @@ function DownloadList({
             {!running ? (
               <div className="mt-3 flex items-center justify-end gap-2 border-t border-ink-line/70 pt-3">
                 {fileUrl ? (
-                  <a href={fileUrl} className="button-secondary">
-                    <CheckCircleIcon size={15} weight="bold" aria-hidden="true" /> Save file
-                  </a>
+                  <>
+                    {local ? <span className="mr-auto text-xs text-acid">Saved locally</span> : null}
+                    <a href={fileUrl} className="button-secondary">
+                      <CheckCircleIcon size={15} weight="bold" aria-hidden="true" /> {local ? 'Download copy' : 'Save file'}
+                    </a>
+                  </>
                 ) : job.status === 'done' ? (
                   <span className="mr-auto text-xs text-danger">File unavailable from the connected engine.</span>
                 ) : null}
@@ -352,30 +358,17 @@ export default function Page() {
       <header className="mx-auto flex w-full max-w-6xl items-center justify-between px-5 py-5 sm:px-8 sm:py-7">
         <div className="flex items-center gap-3">
           <BrandMark />
-          <div>
-            <p className="text-xl font-semibold tracking-[-0.03em] text-cream" translate="no">Pullbyte</p>
-            <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted">local-first downloader</p>
-          </div>
+          <p className="text-xl font-semibold tracking-[-0.03em] text-cream" translate="no">Pullbyte</p>
         </div>
         <span className="rounded-full border border-ink-line bg-ink-soft px-3 py-1.5 text-xs font-medium text-muted">
-          {health?.ready ? 'Engine connected' : health ? 'Engine offline' : 'Checking engine'}
+          {health?.ready ? (health.kind === 'local' ? 'Local helper' : 'Engine connected') : health ? 'Helper offline' : 'Checking helper'}
         </span>
       </header>
 
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl px-5 pb-16 outline-none sm:px-8 sm:pb-24">
         <section className="pt-8 lg:pt-16">
           <div className="mx-auto max-w-4xl">
-            <div className="max-w-3xl">
-              <p className="eyebrow">Local-first media downloader</p>
-              <h1 className="mt-4 max-w-[12ch] text-5xl font-semibold leading-[0.98] tracking-[-0.055em] text-cream sm:text-6xl lg:text-7xl">
-                Links in. Files out.
-              </h1>
-              <p className="mt-5 max-w-[58ch] text-base leading-7 text-muted sm:text-lg">
-                Pullbyte is the lightweight interface for video, audio and image downloads. Connect a real download engine, inspect a link, then save the finished file.
-              </p>
-            </div>
-
-            <section className="mt-9 rounded-card border border-ink-line bg-ink-soft p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-7" aria-labelledby="composer-heading">
+            <section className="mt-3 rounded-card border border-ink-line bg-ink-soft p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] sm:p-7" aria-labelledby="composer-heading">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="eyebrow">New download</p>
@@ -428,10 +421,16 @@ export default function Page() {
               </form>
 
               {health && !health.ready ? (
-                <p role="status" className="mt-4 flex items-start gap-2 rounded-[12px] border border-danger/30 bg-danger/7 p-3 text-sm leading-6 text-muted">
+                <div role="status" className="mt-4 flex items-start gap-3 rounded-[12px] border border-danger/30 bg-danger/7 p-3 text-sm leading-6 text-muted">
                   <WarningCircleIcon size={18} className="mt-0.5 shrink-0 text-danger" aria-hidden="true" />
-                  <span><strong className="font-semibold text-cream">Download engine is not connected.</strong> {health.detail}</span>
-                </p>
+                  <div className="min-w-0 flex-1">
+                    <p><strong className="font-semibold text-cream">Local helper is not running.</strong> {health.detail}</p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <a href={helper.startUrl} className="button-secondary">Start helper</a>
+                      <a href={helper.setupUrl} target="_blank" rel="noreferrer" className="button-ghost">Install helper</a>
+                    </div>
+                  </div>
+                </div>
               ) : null}
 
               {error ? (
@@ -571,22 +570,28 @@ export default function Page() {
 
             <section className="mt-5 rounded-card border border-ink-line bg-ink-soft p-5 sm:p-6" aria-labelledby="downloads-heading">
               <div className="mb-4 flex items-center justify-between gap-4">
-                <div>
+                <div className="min-w-0">
                   <p className="eyebrow">Activity</p>
                   <h2 id="downloads-heading" className="mt-1 text-lg font-semibold text-cream">Downloads</h2>
+                  {health?.kind === 'local' && health.downloadDir ? (
+                    <p className="mt-1 truncate text-xs text-muted" title={health.downloadDir}>Saving locally to {health.downloadDir}</p>
+                  ) : null}
                 </div>
                 <span className="rounded-full bg-ink px-2.5 py-1 text-xs font-semibold text-muted tnum">{jobs.length}</span>
               </div>
-              <DownloadList jobs={jobs} confirmId={confirmId} onConfirm={setConfirmId} onDelete={deleteJob} />
+              <DownloadList
+                jobs={jobs}
+                confirmId={confirmId}
+                onConfirm={setConfirmId}
+                onDelete={deleteJob}
+                local={health?.kind === 'local'}
+              />
             </section>
           </div>
         </section>
       </main>
 
       <div aria-live="polite" className="sr-only">{announce}</div>
-      <footer className="border-t border-ink-line/70 bg-ink px-5 py-6 text-center text-xs text-muted">
-        <span translate="no">Pullbyte</span> · yt-dlp + ffmpeg engine · Download only what you have the rights to.
-      </footer>
     </div>
   )
 }
